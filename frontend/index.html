@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Resume Parser</title>
+<style>
+/* SAME UI LIKE YOU SHARED 🔥 */
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Segoe UI,Arial;background:linear-gradient(135deg,#667eea,#764ba2);min-height:100vh;padding:20px}
+.container{max-width:1200px;margin:auto}
+.header{text-align:center;color:#fff;margin-bottom:30px}
+.header h1{font-size:3rem;font-weight:700;text-shadow:0 2px 10px rgba(0,0,0,.3)}
+.card{background:#fff;padding:25px;border-radius:20px;box-shadow:0 8px 25px rgba(0,0,0,.15);margin-bottom:20px}
+.upload-box{text-align:center;border:3px dashed #667eea;padding:50px;border-radius:15px;cursor:pointer;}
+.upload-box:hover{background:#f4f6ff}
+button{padding:12px 25px;border:none;border-radius:30px;font-size:1rem;cursor:pointer;margin-top:10px}
+.btn{background:#667eea;color:#fff}
+.btn-secondary{background:#ff6b6b;color:#fff}
+.hidden{display:none}
+.tag{display:inline-block;background:#667eea;color:#fff;padding:6px 12px;border-radius:15px;margin:4px}
+.result-box{background:#f8f9ff;padding:15px;border-radius:12px;margin-top:10px}
+.score{font-weight:700;font-size:1.8rem;padding:10px;border-radius:10px;margin-top:10px;text-align:center}
+.score-high{background:#4caf50;color:#fff}
+.score-mid{background:#ff9800;color:#fff}
+.score-low{background:#f44336;color:#fff}
+.alert{padding:12px;border-radius:8px;margin-bottom:10px;display:none}
+.alert-success{background:#d4edda;color:#155724}
+.alert-error{background:#f8d7da;color:#721c24}
+textarea,input{width:100%;padding:10px;border:2px solid #ddd;border-radius:10px;font-size:1rem}
+.spinner{width:40px;height:40px;border:4px solid #eee;border-top:4px solid #667eea;border-radius:50%;animation:spin 1s linear infinite;margin:auto}
+@keyframes spin{100%{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div class="container">
+<div class="header">
+<h1>🚀 AI Resume Parser</h1>
+<p>Upload resume → Extract details → Match job score</p>
+</div>
+
+<div id="success" class="alert alert-success"></div>
+<div id="error" class="alert alert-error"></div>
+
+<!-- Upload Card -->
+<div class="card">
+<h2>📄 Upload Resume</h2>
+
+<div class="upload-box" id="dropZone">Click or Drag file here</div>
+<input type="file" id="fileInput" hidden accept=".pdf,.doc,.docx,.png,.jpg">
+
+<button class="btn" id="uploadBtn" disabled>⬆️ Upload & Parse</button>
+
+<div id="uploadLoader" class="hidden"><div class="spinner"></div><p>Parsing resume...</p></div>
+</div>
+
+<!-- Parsed Data -->
+<div class="card">
+<h2>📊 Parsed Resume</h2>
+<div id="parsed" class="hidden">
+<p><b>Resume ID:</b> <span id="rid"></span></p>
+<div class="result-box"><b>Name:</b> <span id="name"></span></div>
+<div class="result-box"><b>Email:</b> <span id="email"></span></div>
+<div class="result-box"><b>Phone:</b> <span id="phone"></span></div>
+
+<h3>Skills</h3>
+<div id="skills"></div>
+
+<h3>Experience</h3>
+<div id="experience"></div>
+
+<h3>Education</h3>
+<div id="education"></div>
+
+<h4>Raw JSON</h4>
+<pre id="jsonBox"></pre>
+</div>
+</div>
+
+<!-- Match Card -->
+<div class="card">
+<h2>🎯 Match Job Description</h2>
+<textarea id="jobText" rows="6" placeholder="Paste job description..."></textarea>
+<button class="btn-secondary" id="matchBtn" disabled>🔍 Match Score</button>
+
+<div id="matchLoader" class="hidden"><div class="spinner"></div><p>Analyzing...</p></div>
+
+<div id="matchResult"></div>
+</div>
+
+</div>
+
+<script>
+const API_URL = "http://localhost:8000"; 
+const API_KEY = "test123"; // replace when deploying
+
+let file = null;
+let resumeId = null;
+
+// UI refs
+const dropZone = document.getElementById("dropZone");
+const fileInput = document.getElementById("fileInput");
+const uploadBtn = document.getElementById("uploadBtn");
+const matchBtn = document.getElementById("matchBtn");
+const success = msg => show("success",msg);
+const error = msg => show("error",msg);
+
+dropZone.onclick = ()=>fileInput.click();
+dropZone.ondrop = e=>{e.preventDefault();file=e.dataTransfer.files[0];dropZone.innerText=file.name;uploadBtn.disabled=false};
+dropZone.ondragover = e=>e.preventDefault();
+fileInput.onchange = e=>{file=e.target.files[0];dropZone.innerText=file.name;uploadBtn.disabled=false};
+
+function show(id,msg){const el=document.getElementById(id);el.innerText=msg;el.style.display="block";setTimeout(()=>el.style.display="none",4000)}
+
+uploadBtn.onclick = async ()=>{
+ if(!file) return;
+ uploadBtn.disabled=true;
+ document.getElementById("uploadLoader").classList.remove("hidden");
+
+ let fd = new FormData();
+ fd.append("file", file);
+
+ let res = await fetch(`${API_URL}/api/v1/resumes/upload`,{
+   method:"POST",
+   headers:{Authorization:`Bearer ${API_KEY}`},
+   body:fd
+ });
+
+ let data = await res.json();
+
+ document.getElementById("uploadLoader").classList.add("hidden");
+ uploadBtn.disabled=false;
+
+ if(!res.ok) return error(data.detail||"Upload failed");
+
+ success("Resume parsed ✅");
+ resumeId = data.id;
+ matchBtn.disabled=false;
+ showParsed(data.data);
+};
+
+function showParsed(d){
+ document.getElementById("parsed").classList.remove("hidden");
+ document.getElementById("rid").innerText = d.resume_id;
+ document.getElementById("name").innerText = d.extracted_data.name || "-";
+ document.getElementById("email").innerText = d.extracted_data.email || "-";
+ document.getElementById("phone").innerText = d.extracted_data.phone || "-";
+
+ document.getElementById("skills").innerHTML = (d.extracted_data.skills||[])
+     .map(s=>`<span class='tag'>${s}</span>`).join("");
+
+ document.getElementById("experience").innerHTML = (d.extracted_data.experience||[])
+     .map(e=>`<div class="result-box">${e}</div>`).join("");
+
+ document.getElementById("education").innerHTML = (d.extracted_data.education||[])
+     .map(e=>`<div class="result-box">${e}</div>`).join("");
+
+ document.getElementById("jsonBox").innerText = JSON.stringify(d.extracted_data,null,2);
+}
+
+matchBtn.onclick = async ()=>{
+ let text = document.getElementById("jobText").value;
+ if(!text) return error("Paste job description!");
+
+ matchBtn.disabled=true;
+ document.getElementById("matchLoader").classList.remove("hidden");
+
+ let res = await fetch(`${API_URL}/api/v1/match/${resumeId}`,{
+  method:"POST",
+  headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({job_description:text})
+ });
+
+ let data = await res.json();
+ document.getElementById("matchLoader").classList.add("hidden");
+ matchBtn.disabled=false;
+
+ if(!res.ok) return error(data.detail || "Error matching");
+
+ let score = data.score;
+ let cls = score>=70? "score-high": score>=40? "score-mid":"score-low";
+
+ document.getElementById("matchResult").innerHTML = 
+ `<div class="score ${cls}">${score}% Match</div>`;
+ success("Match score ready ✅");
+};
+</script>
+</body>
+</html>
